@@ -1,0 +1,66 @@
+# Railway → Cloudflare Tunnel → Tomcat (Windows 11)
+
+This Node.js service is intended to run **on Railway**. The mobile app calls the Railway URL; Railway forwards the request to a named Cloudflare Tunnel whose origin is `http://localhost:8080` on your Windows 11 PC.
+
+## Architecture
+
+Mobile app → existing Railway URL/service → this proxy route/service → Cloudflare public hostname → Cloudflare Tunnel connector on Windows → Tomcat `localhost:8080`.
+
+## Important URL detail
+
+If this is deployed as a **new Railway service**, it will have its own Railway URL. To keep the app's current Railway URL unchanged, you must integrate this proxy logic into the existing Railway backend or route the existing app's relevant endpoint to this proxy. Deploying a separate service alone does not change where the current app URL points.
+
+## 1. Configure Cloudflare Tunnel on Windows 11
+
+1. Install `cloudflared`.
+2. In Cloudflare Zero Trust, create a **named tunnel**.
+3. Install/run its connector on the Windows 11 PC.
+4. Add a Published Application route / Public Hostname:
+   - Hostname: for example `tomcat.example.com`
+   - Service: `http://localhost:8080`
+5. Keep the Windows PC, Tomcat and `cloudflared` running.
+
+Use a domain managed in Cloudflare for a stable hostname. Quick Tunnel URLs (`trycloudflare.com`) are temporary and should not be used for a persistent production configuration.
+
+## 2. Deploy this service to Railway
+
+Push this folder to a GitHub repository and deploy it as a Railway service, or add it to your existing backend if you want to keep the same Railway URL.
+
+Set Railway Variables:
+
+```env
+TUNNEL_URL=https://tomcat.example.com
+```
+
+Railway provides `PORT` automatically; no need to set it manually.
+
+If the Cloudflare hostname is protected by Cloudflare Access, create a Service Token and add both variables in Railway:
+
+```env
+CF_ACCESS_CLIENT_ID=your-service-token-client-id
+CF_ACCESS_CLIENT_SECRET=your-service-token-client-secret
+```
+
+Keep these values secret. Do not put them in the mobile app or commit them to Git.
+
+## 3. Verify
+
+After deployment, open:
+
+```text
+https://YOUR-RAILWAY-DOMAIN/_proxy-health
+```
+
+It should return a small JSON status response. Then test a known Tomcat endpoint through the Railway URL. All request paths, query strings, HTTP methods, and bodies are forwarded to the tunnel hostname.
+
+## 4. Keep the current app URL
+
+If the app already calls a Railway backend, do **not** replace its base URL. Add a route in that existing backend that forwards the desired requests to this proxy/tunnel, or integrate this proxy handler into the existing service. A separate Railway service has a different URL unless you deliberately attach a domain or configure routing.
+
+## Security notes
+
+- Protect the Tomcat API with its own authentication/authorization.
+- Do not expose Tomcat Manager or other administrative paths publicly.
+- A public Cloudflare hostname can be reached by anyone unless protected. Cloudflare Access service-token support is included above.
+- This is a forwarding proxy, not automatic failover. If the Windows PC, Tomcat, internet connection, or tunnel is down, requests fail.
+- For production use, test large uploads, streaming, WebSockets (if needed), timeouts, and the exact context path of your Tomcat app.
